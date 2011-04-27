@@ -18,7 +18,7 @@ module Js
       def self.build(files)
         files.each do |file|
           lint = Lint.new(file)
-          yield lint.errors unless lint.clean?
+          yield lint unless lint.clean?
         end
       end
 

@@ -3,7 +3,7 @@ require 'pathname'
 require 'optparse'
 require 'stringio'
 require 'fileutils'
-require 'lib/js-preflight'
+require 'js-preflight'
 
 module Js
   module Preflight
@@ -28,6 +28,17 @@ For help with options and usage:
 
 USAGE
       end
+      
+      def file_banner(path, char = "=")
+        banner = ""
+        banner << "\n\n"
+        banner << (char * path.to_s.length + "#{char * 4}\n")
+        banner << "#{char} #{path} #{char}\n"
+        banner << (char * path.to_s.length + "#{char * 4}\n")
+        banner << "\n"
+        banner
+      end
+      
     end
   end
 end
@@ -95,7 +106,7 @@ optparse.parse!
 
 
 if ARGV.length > 0
-
+  STDERR.puts("Operating on #{ARGV}")
   ARGV.each do |filename|
 
     js_files = []
@@ -108,21 +119,20 @@ if ARGV.length > 0
 
     relative_js_files = js_files.map{|js_file| File.join(path.dirname, js_file)}
 
-    lint_errors = []
+    lints = []
     if options[:lint]
-      ::Js::Preflight::Lint.build(relative_js_files) do |errors|
-        lint_errors << errors
+      ::Js::Preflight::Lint.build(relative_js_files) do |lint|
+        lints << lint
       end
     end
 
-    if lint_errors.any?
-      unless options[:quiet]
-        STDERR.puts("#{path}:")
-        STDERR.puts("=" * path.to_s.length)
-        lint_errors.each {|error| STDERR.puts(error)}
-      end
+    STDERR.puts ::Js::Preflight::Instructions.file_banner(path)
 
+    if lints.any?
+      lints.each {|lint| STDERR.puts ::Js::Preflight::Instructions.file_banner(lint.filename, '-'); STDERR.puts(lint.errors)} unless options[:quiet]
       next if options[:strict]
+    else
+      STDERR.puts("Jslint: No problems found") unless options[:quiet]
     end
 
     if options[:pack]
