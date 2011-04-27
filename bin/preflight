@@ -39,13 +39,23 @@ USAGE
         banner
       end
       
+      def ensure_copy(src, dst)
+        FileUtils.mkdir_p(Pathname.new(dst).dirname)
+        if File.directory?(src)
+          FileUtils.cp_r(src, dst)
+        else
+          FileUtils.cp(src, dst)
+        end
+      end
+      
     end
   end
 end
 
 options = {}
 js_output = StringIO.new
-regexp = Js::Preflight::JsRegexp
+js_regexp = Js::Preflight::JsRegexp
+css_regexp = Js::Preflight::CSSRegexp
 protected_paths = %w{/bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /var /var/log /var/spool /etc}
 
 optparse = OptionParser.new do |opts|
@@ -84,7 +94,7 @@ optparse = OptionParser.new do |opts|
   end
 
   options[:build_path] = false
-  opts.on("--build-path PATH", "Output the provided HTML file(s), packaged Javascript", "   at assets.js, and excluded files to PATH.", "   Protected paths are silently ignored; ask an adult for help.", "   Javascript file output -j is ignored with this option.") do |path|
+  opts.on("--build-path PATH", "Output the provided HTML file(s), packaged Javascript", "   at assets.js, css files, images, and excluded js files to PATH.", "   Protected paths are silently ignored; ask an adult for help.", "   Javascript file output -j is ignored with this option.") do |path|
     unless protected_paths.include?(path)
       options[:build_path] = path
     end
@@ -142,10 +152,10 @@ if ARGV.length > 0
       out_filename = Pathname.new(File.join(options[:build_path], path.basename))
       base_path = File.expand_path(options[:build_path])
       js_path = File.join(base_path, "js")
-      build_dirs = [base_path, js_path]
-      build_dirs.each do |path|
-        FileUtils.mkdir_p(path)
-      end
+      css_path = File.join(base_path, "css")
+      images_path = File.join(base_path, "images")
+      build_dirs = [base_path] #, js_path, css_path, images_path # only copy these if they're needed
+      FileUtils.mkdir_p(*build_dirs)
       
       # Re-read the file line by line, and construct a target duplicate with
       # script tags for packed files removed. If a script tag is encountered 
@@ -156,41 +166,47 @@ if ARGV.length > 0
       file.rewind
       File.open(out_filename, "w+") do |outfile|
         while line = file.gets do
-          match = line[regexp, 1]
-          
+          match = line[js_regexp, 1]
+          case
           # If this is a script tag, and we haven't packed it, make sure the file
           # is copied and the script tag is retained. 
           # If it's a script tag and it matches the last of the packed .js files,
-          # insert a script tag that links to our assets.js file.
-          # If this isn't a script tag, just append to the target file.
-          if match
+          # insert a script tag that links to our assets.js file.          
+          when match = line[js_regexp, 1]
             if !js_files.include?(match)
-              FileUtils.mkdir_p(File.join(base_path, Pathname.new(match).dirname))
-              FileUtils.cp(File.join(path.dirname, match), File.join(base_path, match))
+              ::Js::Preflight::Instructions.ensure_copy(File.join(path.dirname, match), File.join(base_path, match))
               outfile << line              
             elsif match == js_files.last
               outfile << %Q{<script src="js/assets.js" type="text/javascript" charset="utf-8"></script>}
             end
+            
+          # When a stylesheet link is encountered, ensure it is copied as well.
+          when match = line[css_regexp, 1]
+            ::Js::Preflight::Instructions.ensure_copy(File.join(path.dirname, match), File.join(base_path, match))
+            outfile << line
+            
+          # If this isn't a script tag, just append to the target file.  
           else
             outfile << line
           end
-          
         end
       end
-      
     end
-
   end
-
+  
+  # Finally, copy the packed file as assets.js, and the entire images directory
+  # (if it exists), to build_path if we're doing that.
   if options[:build_path]
-    # js_output.close
-    # FileUtils.mv(js_output.path, File.join(options[:build_path], "js", "assets.js"))
     js_output.rewind
     File.open(File.join(options[:build_path], "js", "assets.js"), "w") do |assets|
       assets.write js_output.read
     end
+    images_path = File.join(Pathname.new(ARGV[0]).dirname, "images")
+    ::Js::Preflight::Instructions.ensure_copy(images_path, options[:build_path]) if Dir.exists?(images_path)
+  # or output the packed .js file as a file, if we're doing that
   elsif options[:js_file]
     js_output.close
+  # otherwise, just output the packed .js file to STDOUT
   else
     js_output.rewind
     STDOUT.puts js_output.read

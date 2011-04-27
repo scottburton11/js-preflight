@@ -6,7 +6,8 @@ require 'js-preflight/version'
 
 module Js
   module Preflight
-    JsRegexp = %r|src=\"(.+\.js)\"|
+    JsRegexp =  %r|src=\"(.+\.js)\"|
+    CSSRegexp = %r|href=\"(.+\.css)\"|
     Basedir  = File.expand_path(File.join(__FILE__, "..", ".."))
   end
 end
