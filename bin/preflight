@@ -1,0 +1,158 @@
+#!/usr/bin/ruby
+require 'pathname'
+require 'optparse'
+require 'stringio'
+require 'fileutils'
+require 'lib/js-preflight'
+
+module Js
+  module Preflight
+    module Instructions
+      extend self
+      def executable
+        @executable ||= Pathname.new(__FILE__).basename.to_s
+      end
+
+      def print_usage
+
+        STDERR.puts <<USAGE
+
+#{executable}
+#{"=" * executable.length}
+Provide one or more html files as arguments. #{executable} will
+find files ending in .js in the src property of each script tag,
+and process them in order of appearance.
+
+For help with options and usage: 
+#{executable} --help
+
+USAGE
+      end
+    end
+  end
+end
+
+options = {}
+js_output = StringIO.new
+regexp = Js::Preflight::JsRegexp
+protected_paths = %w{/bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /var /var/log /var/spool /etc}
+
+optparse = OptionParser.new do |opts|
+  opts.banner = "Usage: #{Js::Preflight::Instructions.executable} [options] index.html [index2.html, ...]"
+
+  options[:lint] = true
+  opts.on("-l", "--[no-]lint", "Run JSLint on every .js file (default: true)") do |j|
+    options[:lint] = j
+  end
+
+  options[:strict] = true
+  opts.on("-s", "--[no-]strict", "Don't proceed unless JSLint passes (default: true)") do |s|
+    options[:strict] = s
+  end
+
+  options[:pack] = true
+  opts.on("-p", "--[no-]pack", "Pack every .js file, in order of apperance, using JSMin (default: true)") do |p|
+    options[:pack] = p
+  end
+
+  options[:exclude_paths] = []
+  opts.on("--exclude path1,path2,path3", Array, "Exclude .js files if they are in this list of comma-separated paths") do |paths|
+    options[:exclude_paths] = paths
+  end
+
+  options[:quiet] = false
+  opts.on("-q", "--quiet", "Don't report errors (default: false)") do |q|
+    options[:quiet] = q
+  end
+
+  options[:js_file] = false
+  opts.on("-j [FILE]", "--js-file [FILE]", "Output to file <FILE> instead of STDOUT (FILE default: assets.js)") do |f|
+    options[:js_file] = true
+    f = f.nil? ? "assets.js" : f
+    js_output = File.new(f, "w")
+  end
+
+  options[:html_path] = false
+  opts.on("--html-path PATH", "Output the provided HTML file(s), with affected script tags", "   replaced by the packaged version, at <PATH>/[JS_FILE].", "   Protected paths are silently ignored; ask an adult for help.", "   Depends on -j, which provides the basename for JS_FILE") do |path|
+    unless options[:js_file]
+      STDERR.puts "--html-path PATH requires --js-file JS_FILE"
+      exit
+    end
+    unless protected_paths.include?(path)
+      options[:html_path] = path
+    end
+  end
+
+  opts.on("-h", "--help", "Show options and usage") do
+    Js::Preflight::Instructions.print_usage
+    puts opts
+    exit
+  end
+end
+
+optparse.parse!
+
+
+
+if ARGV.length > 0
+
+  ARGV.each do |filename|
+
+    js_files = []
+    path = Pathname.new(filename)
+    file = File.new(path)
+
+    ::Js::Preflight::Scanner.scan(file, options) do |js_file|
+      js_files << js_file
+    end
+
+    relative_js_files = js_files.map{|js_file| File.join(path.dirname, js_file)}
+
+    lint_errors = []
+    if options[:lint]
+      ::Js::Preflight::Lint.build(relative_js_files) do |errors|
+        lint_errors << errors
+      end
+    end
+
+    if lint_errors.any?
+      unless options[:quiet]
+        STDERR.puts("#{path}:")
+        STDERR.puts("=" * path.to_s.length)
+        lint_errors.each {|error| STDERR.puts(error)}
+      end
+
+      next if options[:strict]
+    end
+
+    if options[:pack]
+      ::Js::Preflight::Pack.build(relative_js_files) do |packed_file|
+        js_output << packed_file
+      end
+    end
+
+    if options[:html_path]
+      file.rewind
+      out_filename = Pathname.new(File.join(options[:html_path], path.basename))
+      FileUtils.mkdir_p(out_filename.dirname)
+      File.open(out_filename, "w+") do |outfile|
+        while line = file.gets do
+          outfile << line unless js_files.include?(line[regexp, 1])
+          outfile << %Q{<script src="#{js_output.path}" type="text/javascript" charset="utf-8"></script>} if line[regexp, 1] == js_files.last
+        end
+      end
+    end
+
+  end
+
+  if options[:js_file]
+    js_output.close
+  else
+    js_output.rewind
+    STDOUT.puts js_output.read
+  end
+
+else
+  Js::Preflight::Instructions.print_usage
+  exit
+end
