@@ -6,11 +6,11 @@ Gem::Specification.new do |s|
   s.name        = "js-preflight"
   s.version     = Js::Preflight::VERSION
   s.platform    = Gem::Platform::RUBY
-  s.authors     = ["TODO: Write your name"]
-  s.email       = ["TODO: Write your email address"]
+  s.authors     = ["Scott Burton", "Doug Crockford", "Andy Walker"]
+  s.email       = ["scottburton11@gmail.com"]
   s.homepage    = ""
-  s.summary     = %q{TODO: Write a gem summary}
-  s.description = %q{TODO: Write a gem description}
+  s.summary     = %q{Easy preflight command-line script for jslint and jsmin}
+  s.description = %q{Easy preflight command-line script for jslint and jsmin. Provides a packed, minified javascript file on STDOUT, or writes .js and provided .html files to a provided directory.}
 
   s.rubyforge_project = "js-preflight"
 
@@ -18,4 +18,5 @@ Gem::Specification.new do |s|
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
   s.executables   = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
   s.require_paths = ["lib"]
+  s.bindir  = "bin"
 end
