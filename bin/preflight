@@ -83,14 +83,10 @@ optparse = OptionParser.new do |opts|
     js_output = File.new(f, "w")
   end
 
-  options[:html_path] = false
-  opts.on("--html-path PATH", "Output the provided HTML file(s), with affected script tags", "   replaced by the packaged version, at <PATH>/[JS_FILE].", "   Protected paths are silently ignored; ask an adult for help.", "   Depends on -j, which provides the basename for JS_FILE") do |path|
-    unless options[:js_file]
-      STDERR.puts "--html-path PATH requires --js-file JS_FILE"
-      exit
-    end
+  options[:build_path] = false
+  opts.on("--build-path PATH", "Output the provided HTML file(s), packaged Javascript", "   at assets.js, and excluded files to PATH.", "   Protected paths are silently ignored; ask an adult for help.", "   Javascript file output -j is ignored with this option.") do |path|
     unless protected_paths.include?(path)
-      options[:html_path] = path
+      options[:build_path] = path
     end
   end
 
@@ -141,21 +137,59 @@ if ARGV.length > 0
       end
     end
 
-    if options[:html_path]
+    if options[:build_path]
+      # Set up the target build directory structure
+      out_filename = Pathname.new(File.join(options[:build_path], path.basename))
+      base_path = File.expand_path(options[:build_path])
+      js_path = File.join(base_path, "js")
+      build_dirs = [base_path, js_path]
+      build_dirs.each do |path|
+        FileUtils.mkdir_p(path)
+      end
+      
+      # Re-read the file line by line, and construct a target duplicate with
+      # script tags for packed files removed. If a script tag is encountered 
+      # that links a non-packed file (likely in exclude_paths), ensure the file
+      # is copied to the appropriate location in the build directory. Finally,
+      # link the packed .js file where we encounter the last .js file we operated
+      # on.
       file.rewind
-      out_filename = Pathname.new(File.join(options[:html_path], path.basename))
-      FileUtils.mkdir_p(out_filename.dirname)
       File.open(out_filename, "w+") do |outfile|
         while line = file.gets do
-          outfile << line unless js_files.include?(line[regexp, 1])
-          outfile << %Q{<script src="#{js_output.path}" type="text/javascript" charset="utf-8"></script>} if line[regexp, 1] == js_files.last
+          match = line[regexp, 1]
+          
+          # If this is a script tag, and we haven't packed it, make sure the file
+          # is copied and the script tag is retained. 
+          # If it's a script tag and it matches the last of the packed .js files,
+          # insert a script tag that links to our assets.js file.
+          # If this isn't a script tag, just append to the target file.
+          if match
+            if !js_files.include?(match)
+              FileUtils.mkdir_p(File.join(base_path, Pathname.new(match).dirname))
+              FileUtils.cp(File.join(path.dirname, match), File.join(base_path, match))
+              outfile << line              
+            elsif match == js_files.last
+              outfile << %Q{<script src="js/assets.js" type="text/javascript" charset="utf-8"></script>}
+            end
+          else
+            outfile << line
+          end
+          
         end
       end
+      
     end
 
   end
 
-  if options[:js_file]
+  if options[:build_path]
+    # js_output.close
+    # FileUtils.mv(js_output.path, File.join(options[:build_path], "js", "assets.js"))
+    js_output.rewind
+    File.open(File.join(options[:build_path], "js", "assets.js"), "w") do |assets|
+      assets.write js_output.read
+    end
+  elsif options[:js_file]
     js_output.close
   else
     js_output.rewind
