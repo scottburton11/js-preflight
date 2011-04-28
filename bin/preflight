@@ -166,25 +166,18 @@ if ARGV.length > 0
       file.rewind
       File.open(out_filename, "w+") do |outfile|
         while line = file.gets do
-          match = line[js_regexp, 1]
-          case
           # If this is a script tag, and we haven't packed it, make sure the file
           # is copied and the script tag is retained. 
           # If it's a script tag and it matches the last of the packed .js files,
           # insert a script tag that links to our assets.js file.          
-          when match = line[js_regexp, 1]
+          match = line[js_regexp, 1]
+          if match
             if !js_files.include?(match)
               ::Js::Preflight::Instructions.ensure_copy(File.join(path.dirname, match), File.join(base_path, match))
               outfile << line              
             elsif match == js_files.last
               outfile << %Q{<script src="js/assets.js" type="text/javascript" charset="utf-8"></script>}
-            end
-            
-          # When a stylesheet link is encountered, ensure it is copied as well.
-          when match = line[css_regexp, 1]
-            ::Js::Preflight::Instructions.ensure_copy(File.join(path.dirname, match), File.join(base_path, match))
-            outfile << line
-            
+            end            
           # If this isn't a script tag, just append to the target file.  
           else
             outfile << line
@@ -194,15 +187,24 @@ if ARGV.length > 0
     end
   end
   
-  # Finally, copy the packed file as assets.js, and the entire images directory
-  # (if it exists), to build_path if we're doing that.
+  # Finally, copy the packed file as assets.js, and the entire contents of
+  # the images and css directories (if they exist), to build_path if we're doing that.
+  # The following relative paths will be tested:
+  # css, stylesheets, images, img
   if options[:build_path]
     js_output.rewind
+    STDERR.puts "Copying assets.js"
     File.open(File.join(options[:build_path], "js", "assets.js"), "w") do |assets|
       assets.write js_output.read
     end
-    images_path = File.join(Pathname.new(ARGV[0]).dirname, "images")
-    ::Js::Preflight::Instructions.ensure_copy(images_path, options[:build_path]) if Dir.exists?(images_path)
+    asset_paths = %w{css stylesheets images img}
+    asset_paths.each do |path|
+      asset_path = File.join(Pathname.new(ARGV[0]).dirname, path)
+      if Dir.exists?(asset_path)
+        STDERR.puts "Copying #{asset_path}"
+        ::Js::Preflight::Instructions.ensure_copy(asset_path, options[:build_path]) if Dir.exists?(asset_path)        
+      end
+    end
   # or output the packed .js file as a file, if we're doing that
   elsif options[:js_file]
     js_output.close
