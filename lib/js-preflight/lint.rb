@@ -25,7 +25,11 @@ module Js
       private
 
       def lint
-        `js -f #{executable_path}/jslint < #{filename}`
+        unless `which js`.empty?
+          `js -f #{executable_path}/jslint < #{filename}`
+        else
+          "No js interpreter found; consider installing Spidermonkey"
+        end
       end  
     end
   end

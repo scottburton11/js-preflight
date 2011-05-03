@@ -193,8 +193,11 @@ if ARGV.length > 0
   # css, stylesheets, images, img
   if options[:build_path]
     js_output.rewind
-    STDERR.puts "Copying assets.js"
-    File.open(File.join(options[:build_path], "js", "assets.js"), "w") do |assets|
+    STDERR.puts "Saving assets.js"
+    js_path = File.join(options[:build_path], "js")
+    css_path = File.join(options[:build_path], "css")
+    FileUtils.mkdir_p(js_path)
+    File.open(File.join(js_path, "assets.js"), "w") do |assets|
       assets.write js_output.read
     end
     asset_paths = %w{css stylesheets images img}
